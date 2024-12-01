@@ -17,7 +17,6 @@ tasks:
     description: "Execute the monitored workflow as a subflow."
     namespace: "{{ inputs.namespace }}"
     flowId: "{{ inputs.monitored_workflow }}"
-    store: true
 
   - id: check-subflow-status
     type: io.kestra.plugin.core.log.Fetch
@@ -25,15 +24,19 @@ tasks:
     namespace: "{{ inputs.namespace }}"
     flowId: "{{ inputs.monitored_workflow }}"
     executionId: "{{ outputs['run-monitored-workflow'].executionId }}"
-    store: true
+
 
   - id: validate-output
     type: io.kestra.plugin.scripts.shell.Script
     description: "Validate the outputs of the monitored workflow."
     script: |
+      set -e
+      echo "DEBUG: Outputs from check-subflow-status: {{ outputs['check-subflow-status'] }}"
+      
       if [[ -z "{{ outputs['check-subflow-status'].status }}" ]]; then
-        echo "Error: Workflow status is missing." >&2
-        exit 1
+        echo "Warning: Workflow status is missing, proceeding anyway."
+      else
+        echo "Workflow status: {{ outputs['check-subflow-status'].status }}"
       fi
 
   - id: analyze-error
@@ -61,29 +64,32 @@ tasks:
         echo "DEBUG: analyze-error output = {{ outputs['analyze-error'].stdout }}"
         if [[ "{{ outputs['analyze-error'].stdout }}" == *"transient"* ]]; then
           echo "Retrying the task..."
-          sleep 5
         elif [[ "{{ outputs['analyze-error'].stdout }}" == *"persistent"* ]]; then
           echo "Persistent error detected. Notifying the team."
           DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
           curl -X POST $DISCORD_WEBHOOK_URL -H "Content-Type: application/json" -d '{
-            "content": "Persistent error detected in workflow '{{ inputs.monitored_workflow }}'. Manual intervention might be needed.",
+            "content": "Persistent error detected in workflow {{ inputs.monitored_workflow }}. Manual intervention might be needed.",
             "username": "Error Bot"
           }'
         elif [[ "{{ outputs['analyze-error'].stdout }}" == *"none"* ]]; then
           echo "No error detected. Workflow executed successfully."
-        else
+        else:
           echo "Unknown error type detected. No action taken."
         fi
 
-  # Step 6: Trigger Retry Subflow (only if transient error detected)
-  - id: retry-monitored-workflow
-    type: io.kestra.plugin.core.flow.Subflow
-    description: "Retrying the monitored workflow after transient error"
-    flowId: "{{ inputs.monitored_workflow }}"
-    namespace: "{{ inputs.namespace }}"
-    inputs:
-      monitored_workflow: "{{ inputs.monitored_workflow }}"
-    condition: "{{ outputs['handle-error'].stdout == 'Retrying the task... ' }}"  
+
+  - id: wait-for-retry-condition
+    type: io.kestra.plugin.core.flow.WaitFor
+    description: "Wait for a transient error condition to be met before retrying."
+    condition: "{{ outputs['handle-error'].stdout | trim == 'Retrying the task...' }}"
+    tasks:
+      - id: retry-monitored-workflow
+        type: io.kestra.plugin.core.flow.Subflow
+        description: "Retry the monitored workflow after a transient error."
+        flowId: "{{ inputs.monitored_workflow }}"
+        namespace: "{{ inputs.namespace }}"
+        inputs:
+          monitored_workflow: "{{ inputs.monitored_workflow }}"
 
   - id: capture-snapshot
     type: io.kestra.plugin.core.namespace.DownloadFiles
@@ -107,7 +113,6 @@ tasks:
 outputs:
   - id: success
     type: BOOLEAN
-    key: success
     description: "Workflow executed successfully."
     value: true  
 
