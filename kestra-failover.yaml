@@ -1,0 +1,124 @@
+id: enhanced-self-healing-workflow
+namespace: hackathon.kestra
+
+inputs:
+  - id: monitored_workflow
+    type: STRING
+    required: true
+    description: "ID of the workflow to monitor."
+  - id: namespace
+    type: STRING
+    required: true
+    description: "Namespace of the workflow to monitor."
+
+tasks:
+  - id: run-monitored-workflow
+    type: io.kestra.plugin.core.flow.Subflow
+    description: "Execute the monitored workflow as a subflow."
+    namespace: "{{ inputs.namespace }}"
+    flowId: "{{ inputs.monitored_workflow }}"
+    store: true
+
+  - id: check-subflow-status
+    type: io.kestra.plugin.core.log.Fetch
+    description: "Fetch the status of the executed subflow."
+    namespace: "{{ inputs.namespace }}"
+    flowId: "{{ inputs.monitored_workflow }}"
+    executionId: "{{ outputs['run-monitored-workflow'].executionId }}"
+    store: true
+
+  - id: validate-output
+    type: io.kestra.plugin.scripts.shell.Script
+    description: "Validate the outputs of the monitored workflow."
+    script: |
+      if [[ -z "{{ outputs['check-subflow-status'].status }}" ]]; then
+        echo "Error: Workflow status is missing." >&2
+        exit 1
+      fi
+
+  - id: analyze-error
+    type: io.kestra.plugin.scripts.python.Script
+    description: "Analyze the status of the monitored workflow's execution."
+    script: |
+      import re
+
+      error_message = "{{ outputs['check-subflow-status'].errors[0].message if outputs['check-subflow-status'].errors else '' }}"
+      
+      if re.search(r"(timeout|connection|unreachable)", error_message, re.IGNORECASE):
+          print("error_type=transient")
+      elif re.search(r"(persistent|critical|fatal)", error_message, re.IGNORECASE):
+          print("error_type=persistent")
+      elif not error_message:
+          print("error_type=none")
+      else:
+          print("error_type=unknown")
+
+  - id: handle-error
+    type: io.kestra.core.tasks.scripts.Bash
+    description: "Classify and handle errors based on type."
+    commands:
+      - |
+        echo "DEBUG: analyze-error output = {{ outputs['analyze-error'].stdout }}"
+        if [[ "{{ outputs['analyze-error'].stdout }}" == *"transient"* ]]; then
+          echo "Retrying the task..."
+          sleep 5
+        elif [[ "{{ outputs['analyze-error'].stdout }}" == *"persistent"* ]]; then
+          echo "Persistent error detected. Notifying the team."
+          DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+          curl -X POST $DISCORD_WEBHOOK_URL -H "Content-Type: application/json" -d '{
+            "content": "Persistent error detected in workflow '{{ inputs.monitored_workflow }}'. Manual intervention might be needed.",
+            "username": "Error Bot"
+          }'
+        elif [[ "{{ outputs['analyze-error'].stdout }}" == *"none"* ]]; then
+          echo "No error detected. Workflow executed successfully."
+        else
+          echo "Unknown error type detected. No action taken."
+        fi
+
+  # Step 6: Trigger Retry Subflow (only if transient error detected)
+  - id: retry-monitored-workflow
+    type: io.kestra.plugin.core.flow.Subflow
+    description: "Retrying the monitored workflow after transient error"
+    flowId: "{{ inputs.monitored_workflow }}"
+    namespace: "{{ inputs.namespace }}"
+    inputs:
+      monitored_workflow: "{{ inputs.monitored_workflow }}"
+    condition: "{{ outputs['handle-error'].stdout == 'Retrying the task... ' }}"  
+
+  - id: capture-snapshot
+    type: io.kestra.plugin.core.namespace.DownloadFiles
+    description: "Store logs and parameters at the point of failure."
+    namespace: "snapshot-namespace"
+    files:
+      - from: "/tmp/workflow_error.log"
+        to: "/logs/snapshot-{{ inputs.monitored_workflow }}.log"
+
+  - id: send-summary
+    type: io.kestra.core.tasks.scripts.Bash
+    description: "Send a summary notification with status and snapshot."
+    commands:
+      - |
+        DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1312811157651718235/Gl3AMiylD8SEVMaIn8FfhveKom-G-7Ciw06VhPCocI5e1eWedh5MFFLiwG_y9xg4oqvX"
+        curl -X POST $DISCORD_WEBHOOK_URL -H "Content-Type: application/json" -d '{
+          "content": "Workflow Monitoring Summary:\\nWorkflow ID: {{ inputs.monitored_workflow }}\\nStatus: {{ outputs['check-subflow-status'].status }}\\nSnapshot: snapshot-{{ inputs.monitored_workflow }}.log",
+          "username": "Workflow Monitor"
+        }'
+
+outputs:
+  - id: success
+    type: BOOLEAN
+    key: success
+    description: "Workflow executed successfully."
+    value: true  
+
+errors:
+  - id: notify-on-critical-error
+    type: io.kestra.core.tasks.scripts.Bash
+    description: "Send a Discord alert on critical errors."
+    commands:
+      - |
+        DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1312811157651718235/Gl3AMiylD8SEVMaIn8FfhveKom-G-7Ciw06VhPCocI5e1eWedh5MFFLiwG_y9xg4oqvX"
+        curl -X POST $DISCORD_WEBHOOK_URL -H "Content-Type: application/json" -d '{
+          "content": "Critical Workflow Error!\\nA critical error occurred in the enhanced self-healing workflow. Check the logs for details.",
+          "username": "Error Bot"
+        }'
