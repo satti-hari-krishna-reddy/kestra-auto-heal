@@ -62,18 +62,17 @@ For every failure, it logs the workflow’s status, error messages, and executio
     **Description:** Captures and saves the current state of the monitored workflow during failures.
 
 6. Summarize Results
-Once the self-healing workflow completes, it sends a summary notification to Slack with the workflow status and snapshot details.
+Once the self-healing workflow completes, it sends a summary notification to discord with the workflow status and snapshot details.
 
     **Task:** `send-summary`
 
     **Description:** Notifies stakeholders with an execution summary for transparency.
 
 7. Global Error Handling
-If the self-healing workflow itself encounters a critical failure, an email alert is sent to administrators for immediate action.
+If the self-healing workflow itself encounters a critical failure, an discord alert is sent to administrators for immediate action.
 
     **Error Task:** `notify-on-critical-error`
 
-    **Description:** Sends an email on critical workflow errors.
 
 ## 🚀 How to Run
 ### Prerequisites
@@ -94,9 +93,7 @@ https://github.com/satti-hari-krishna-reddy/kestra-auto-heal
 ```
 
 ### Running the Workflow
-Navigate to the Kestra UI and upload the YAML file (enhanced-self-healing-workflow.yml).
+Navigate to the Kestra UI and upload the YAML file (kestra-failover.yaml).
 Provide the monitored_workflow ID as an input to start monitoring a specific workflow.
 Trigger the workflow manually 
 
-## 🧪 Demo Video
-Video link : 
