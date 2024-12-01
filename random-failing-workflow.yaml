@@ -1,0 +1,16 @@
+id: random-failing-workflow
+namespace: hackathon.kestra
+
+tasks:
+  - id: simulate-failure
+    type: io.kestra.plugin.scripts.shell.Script
+    description: "Simulate random failure for demo purposes."
+    interpreter: ["/bin/bash", "-c"]  
+    script: |
+      # Randomly decide if the task should succeed or fail
+      if (( RANDOM % 2 == 0 )); then
+        echo "Simulated failure occurred!"
+        exit 1  
+      else
+        echo "Task succeeded!"
+      fi
