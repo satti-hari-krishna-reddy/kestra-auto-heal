@@ -1,8 +1,8 @@
-# Enhanced Self-Healing Workflow for Kestra
+# Automated Workflow Resilience System for Kestra
 ## 🌟 Introduction
 In complex systems, workflows are bound to fail occasionally. Whether due to transient issues like network timeouts or persistent bugs, handling these failures automatically can significantly improve system resilience.
 
-This project is a self-healing workflow built with Kestra. It monitors and manages other workflows within Kestra, automatically identifying and addressing errors, retrying operations, and notifying developers when manual intervention is required.
+This project is an Automated Workflow Resilience System built with Kestra. It monitors and manages other workflows within Kestra, automatically identifying and addressing errors, retrying operations, and notifying developers when manual intervention is required.
 
 **With this workflow, you can:**
 
@@ -85,16 +85,12 @@ docker run -p 8080:8080 kestra/kestra:latest
 ``` 
 Verify that Kestra is running by visiting http://localhost:8080.
 
-### Slack and Email Setup
-
-Configure a Slack webhook and add the URL as a secret in Kestra.
-Ensure email notifications are configured with valid SMTP credentials.
 
 ### GitHub Repository
 
 Clone this repository:
 ```
-git clone <repository-url>  
+https://github.com/satti-hari-krishna-reddy/kestra-auto-heal
 ```
 
 ### Running the Workflow
